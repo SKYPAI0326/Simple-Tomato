@@ -8,9 +8,9 @@ export interface Memo {
 export interface NewsItem {
   id: number;
   title: string;
-  category: string;
+  source: string;
+  url: string;
   date: string;
-  summary: string;
 }
 
 export enum TimerMode {

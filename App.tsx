@@ -20,11 +20,11 @@ const App: React.FC = () => {
             <Timer />
           </div>
 
-          <div className="md:col-span-2 md:row-span-2 bg-white/40 backdrop-blur-md rounded-lg p-1 border border-white/40 overflow-hidden">
+          <div className="md:col-span-2 md:row-span-2 overflow-hidden">
             <NewsBoard />
           </div>
 
-          <div className="md:col-span-2 md:row-span-2 bg-zen-wood rounded-lg shadow-lg p-1 border border-white/20 overflow-hidden">
+          <div className="md:col-span-2 md:row-span-2 bg-zen-wood rounded-lg shadow-lg border border-white/20 overflow-hidden">
             <MemoBoard />
           </div>
 
