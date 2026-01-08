@@ -108,14 +108,17 @@ const Timer: React.FC = () => {
   });
 
   const [displayTime, setDisplayTime] = useState(0);
-  const animationRef = useRef<number>();
+  // Fix: Explicitly provide undefined as initial value to satisfy useRef overloads
+  const animationRef = useRef<number | undefined>(undefined);
 
   const saveState = useCallback((newState: TimerState) => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(newState));
     setState(newState);
   }, []);
 
-  const updateDisplay = useCallback(() => {
+  // Fix: Use a default parameter value instead of an optional one to ensure manual calls are valid 
+  // and match the expected signature for requestAnimationFrame.
+  const updateDisplay = useCallback((_timestamp: number = 0) => {
     if (state.isActive && state.endTime) {
       const now = Date.now();
       const diff = state.endTime - now;
@@ -131,6 +134,7 @@ const Timer: React.FC = () => {
         setDisplayTime(nextDuration);
       } else {
         setDisplayTime(diff);
+        // Pass the function directly to requestAnimationFrame
         animationRef.current = requestAnimationFrame(updateDisplay);
       }
     } else {
@@ -139,9 +143,10 @@ const Timer: React.FC = () => {
   }, [state, saveState]);
 
   useEffect(() => {
+    // Calling updateDisplay without arguments is now correct as the parameter has a default value.
     updateDisplay();
     return () => {
-      if (animationRef.current) cancelAnimationFrame(animationRef.current);
+      if (animationRef.current !== undefined) cancelAnimationFrame(animationRef.current);
     };
   }, [updateDisplay]);
 
