@@ -22,21 +22,28 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'npm'
+          # 關鍵修改：移除了 cache: 'npm'，這樣就不會檢查 lock file 了
+          
       - name: Install dependencies
+        # 關鍵修改：使用 npm install 會自動產生需要的依賴，不強求 lock file
         run: npm install
+
       - name: Build
         run: npm run build
+        
       - name: Setup Pages
         uses: actions/configure-pages@v4
+        
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: './dist'
+          
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
