@@ -15,7 +15,8 @@ const NewsBoard: React.FC = () => {
     setStatus('searching');
     
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+      // Re-initialize GoogleGenAI right before use to ensure the latest API key is used, following the strict initialization format.
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
       // 改良後的 Prompt，強制要求特定格式，這比純靠 Metadata 穩定
       const prompt = `Please search for the latest news about: "${query}". 
