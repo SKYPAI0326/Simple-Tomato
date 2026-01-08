@@ -13,11 +13,14 @@ const NewsBoard: React.FC = () => {
 
   const handleConnectAPI = async () => {
     try {
-      if ((window as any).aistudio) {
+      if (typeof (window as any).aistudio !== 'undefined') {
         await (window as any).aistudio.openSelectKey();
         setIsKeyMissing(false);
         setErrorMessage(null);
-        fetchLiveNews();
+        // 稍作延遲後重新獲取
+        setTimeout(() => fetchLiveNews(searchQuery || undefined), 500);
+      } else {
+        alert("找不到 API 金鑰設定組件。請確保在支援的環境中執行。");
       }
     } catch (e) {
       console.error("Connection failed", e);
@@ -25,6 +28,7 @@ const NewsBoard: React.FC = () => {
   };
 
   const fetchLiveNews = async (query: string = "Latest global technology and productivity news") => {
+    // 每次呼叫前檢查金鑰
     if (!process.env.API_KEY) {
       setIsKeyMissing(true);
       return;
@@ -32,10 +36,12 @@ const NewsBoard: React.FC = () => {
 
     setIsLoading(true);
     setErrorMessage(null);
+    setIsKeyMissing(false);
     
     try {
+      // 根據規範，每次請求時建立新的實體
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      // 嚴格定義輸出格式，確保 LLM 生成精確的標題與來源
+      
       const prompt = `Find 6 most recent and relevant news about: "${query}". 
       Write a concise list where each line follows this exact format:
       [TITLE] | [SOURCE] | [URL]
@@ -56,7 +62,6 @@ const NewsBoard: React.FC = () => {
       const responseText = result.text || "";
       const liveNews: NewsItem[] = [];
 
-      // 解析 AI 生成的文字列表
       const lines = responseText.split('\n').filter(line => line.includes('|'));
       lines.forEach((line, index) => {
         const parts = line.split('|').map(p => p.trim());
@@ -75,7 +80,6 @@ const NewsBoard: React.FC = () => {
         }
       });
 
-      // 解析元數據作為補充
       const chunks = result.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
       const groundItems = chunks
         .filter(chunk => chunk.web && chunk.web.uri)
@@ -92,7 +96,6 @@ const NewsBoard: React.FC = () => {
           };
         });
 
-      // 優先採用 AI 生成的標題 (去重邏輯)
       const combined = [...liveNews, ...groundItems];
       const uniqueNews = combined.filter((v, i, a) => 
         a.findIndex(t => t.url === v.url) === i
@@ -106,7 +109,6 @@ const NewsBoard: React.FC = () => {
 
     } catch (error: any) {
       console.error("News Fetch Error:", error);
-      // 處理特定 API Key 錯誤
       if (error.message?.includes("Requested entity was not found") || error.message?.includes("API key")) {
         setIsKeyMissing(true);
       } else {
@@ -145,7 +147,7 @@ const NewsBoard: React.FC = () => {
           </div>
           <button 
             onClick={() => fetchLiveNews(searchQuery || undefined)} 
-            disabled={isLoading || isKeyMissing}
+            disabled={isLoading}
             className="p-2 hover:bg-black/5 rounded-full transition-colors disabled:opacity-30 group/btn"
           >
             <RefreshCw className={`w-4 h-4 text-zen-text/40 ${isLoading ? 'animate-spin' : 'group-hover/btn:rotate-180 transition-transform duration-500'}`} />
@@ -157,10 +159,9 @@ const NewsBoard: React.FC = () => {
           <input
             type="text"
             value={searchQuery}
-            disabled={isKeyMissing}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="搜尋新聞、趨勢..."
-            className="w-full bg-white/40 border border-white/50 rounded-xl pl-9 pr-4 py-2 text-xs text-zen-text outline-none focus:bg-white/80 focus:border-zen-matcha/30 transition-all disabled:opacity-50"
+            className="w-full bg-white/40 border border-white/50 rounded-xl pl-9 pr-4 py-2 text-xs text-zen-text outline-none focus:bg-white/80 focus:border-zen-matcha/30 transition-all"
           />
         </form>
       </div>
