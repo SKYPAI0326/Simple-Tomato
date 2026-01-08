@@ -8,24 +8,25 @@ const NewsBoard: React.FC = () => {
   const [news, setNews] = useState<NewsItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [status, setStatus] = useState<'idle' | 'searching' | 'error'>('idle');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const fetchLiveNews = async (query: string = "Latest global technology and productivity news") => {
     setIsLoading(true);
-    setStatus('searching');
+    setErrorMessage(null);
     
     try {
-      // Re-initialize GoogleGenAI right before use to ensure the latest API key is used, following the strict initialization format.
+      if (!process.env.API_KEY) {
+        throw new Error("API Key is missing. Please check your environment configuration.");
+      }
+
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
-      // 改良後的 Prompt，強制要求特定格式，這比純靠 Metadata 穩定
-      const prompt = `Please search for the latest news about: "${query}". 
-      List 6 specific article headlines with their source and URL. 
-      Format each line strictly as: [HEADLINE] | [SOURCE] | [URL]
-      Example: SpaceX launches new satellite | TechCrunch | https://techcrunch.com/article
-      Ensure headlines are descriptive article titles, not just website names.`;
+      // 更簡潔且容錯率高的 Prompt
+      const prompt = `Search for 6 latest news articles about: "${query}".
+      For each article, provide: Headline, Source name, and URL.
+      Format: [HEADLINE] | [SOURCE] | [URL]`;
 
-      const response = await ai.models.generateContent({
+      const result = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: prompt,
         config: {
@@ -33,53 +34,57 @@ const NewsBoard: React.FC = () => {
         },
       });
 
+      const response = result;
       const responseText = response.text || "";
       let liveNews: NewsItem[] = [];
 
-      // 1. 解析 AI 生成的文字內容 (這通常包含最好的標題)
-      const lines = responseText.split('\n');
+      // 1. 嘗試解析文字 (處理可能的 Markdown 代碼塊)
+      const cleanText = responseText.replace(/```[a-z]*\n?/g, '').replace(/```/g, '');
+      const lines = cleanText.split('\n').filter(l => l.includes('|'));
+      
       lines.forEach((line, index) => {
-        if (line.includes('|')) {
-          const parts = line.split('|').map(p => p.trim().replace(/^[\d.\-\s*]+/, ''));
-          if (parts.length >= 3) {
-            const [headline, source, url] = parts;
-            if (url.startsWith('http')) {
-              liveNews.push({
-                id: index,
-                title: headline,
-                source: source,
-                url: url,
-                date: new Date().toLocaleDateString('ja-JP')
-              });
-            }
+        const parts = line.split('|').map(p => p.trim());
+        if (parts.length >= 3) {
+          const [headline, source, url] = parts;
+          // 移除標題開頭的數字或星號
+          const cleanHeadline = headline.replace(/^[\d.\-\s*]+/, '');
+          if (url.startsWith('http')) {
+            liveNews.push({
+              id: index,
+              title: cleanHeadline,
+              source: source,
+              url: url,
+              date: new Date().toLocaleDateString('ja-JP')
+            });
           }
         }
       });
 
-      // 2. 如果文字解析失敗，嘗試從 Grounding Chunks 提取 (備援)
-      if (liveNews.length === 0) {
-        const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-        liveNews = chunks
-          .filter(chunk => chunk.web)
-          .map((chunk, index) => ({
-            id: index + 100,
-            title: chunk.web.title || "Latest Update",
-            source: new URL(chunk.web.uri).hostname.replace('www.', ''),
-            url: chunk.web.uri,
-            date: new Date().toLocaleDateString('ja-JP')
-          }));
+      // 2. 備援與補充：從 Grounding Chunks 提取 (這是系統要求的核心來源)
+      const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+      const groundItems = chunks
+        .filter(chunk => chunk.web && chunk.web.uri)
+        .map((chunk, index) => ({
+          id: index + 100,
+          title: chunk.web.title || "Latest Update",
+          source: new URL(chunk.web.uri).hostname.replace('www.', ''),
+          url: chunk.web.uri,
+          date: new Date().toLocaleDateString('ja-JP')
+        }));
+
+      // 合併兩者，以 URL 為唯一標識去重
+      const combined = [...liveNews, ...groundItems];
+      const uniqueNews = combined.filter((v, i, a) => a.findIndex(t => t.url === v.url) === i);
+
+      if (uniqueNews.length === 0) {
+        setErrorMessage("未找到相關新聞，請嘗試更換關鍵字。");
+      } else {
+        setNews(uniqueNews.slice(0, 6));
       }
 
-      // 移除重複項並過濾無效標題
-      const finalNews = liveNews
-        .filter(item => item.title && item.title.length > 5)
-        .filter((v, i, a) => a.findIndex(t => (t.url === v.url)) === i);
-
-      setNews(finalNews.slice(0, 6));
-      setStatus('idle');
-    } catch (error) {
-      console.error("AI Fetch failed:", error);
-      setStatus('error');
+    } catch (error: any) {
+      console.error("News Fetch Error:", error);
+      setErrorMessage(error.message || "連線至 Gemini 時發生錯誤");
     } finally {
       setIsLoading(false);
     }
@@ -96,10 +101,6 @@ const NewsBoard: React.FC = () => {
     }
   };
 
-  const openNews = (url: string) => {
-    if (url) window.open(url, '_blank', 'noopener,noreferrer');
-  };
-
   return (
     <div className="h-full flex flex-col bg-white/40 backdrop-blur-xl rounded-lg border border-white/60 shadow-sm overflow-hidden group hover:bg-white/50 transition-all duration-500">
       
@@ -113,7 +114,7 @@ const NewsBoard: React.FC = () => {
             <div className="flex flex-col">
               <span className="font-bold text-zen-text tracking-wide text-sm">Live Feed</span>
               <span className="text-[9px] uppercase tracking-widest font-bold opacity-30 flex items-center gap-1">
-                <Globe className="w-2 h-2" /> Real-time search
+                <Globe className="w-2 h-2" /> Google Search API
               </span>
             </div>
           </div>
@@ -132,25 +133,40 @@ const NewsBoard: React.FC = () => {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="搜尋具體新聞主題..."
+            placeholder="搜尋新聞、科技趨勢..."
             className="w-full bg-white/40 border border-white/50 rounded-xl pl-9 pr-4 py-2 text-xs text-zen-text outline-none focus:bg-white/80 focus:border-zen-matcha/30 transition-all"
           />
         </form>
       </div>
 
-      {/* List */}
+      {/* List Container */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
         {isLoading ? (
           <div className="h-full flex flex-col items-center justify-center gap-3 text-zen-text/30">
             <Loader2 className="w-8 h-8 animate-spin text-zen-matcha" />
-            <span className="text-[10px] font-bold tracking-widest uppercase animate-pulse">正在精選文章標題...</span>
+            <span className="text-[10px] font-bold tracking-widest uppercase animate-pulse">正在從網路選取資訊...</span>
           </div>
-        ) : news.length > 0 ? (
+        ) : errorMessage ? (
+          <div className="h-full flex flex-col items-center justify-center p-6 text-center gap-4">
+            <div className="p-4 bg-red-50 rounded-2xl border border-red-100">
+              <AlertCircle className="w-6 h-6 text-red-400 mx-auto mb-2" />
+              <p className="text-xs text-red-600 font-medium">{errorMessage}</p>
+            </div>
+            <button 
+              onClick={() => fetchLiveNews()}
+              className="text-[10px] font-bold uppercase tracking-widest text-zen-matcha hover:underline"
+            >
+              嘗試重新載入
+            </button>
+          </div>
+        ) : (
           news.map((item) => (
-            <div 
+            <a 
               key={item.url} 
-              onClick={() => openNews(item.url)}
-              className="p-4 rounded-2xl bg-white/20 hover:bg-white/90 transition-all duration-300 cursor-pointer group/item border border-transparent hover:border-white/80 hover:shadow-md"
+              href={item.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block p-4 rounded-2xl bg-white/20 hover:bg-white/90 transition-all duration-300 group/item border border-transparent hover:border-white/80 hover:shadow-md"
             >
               <div className="flex flex-col gap-2">
                 <div className="flex justify-between items-start gap-3">
@@ -160,16 +176,12 @@ const NewsBoard: React.FC = () => {
                   <ExternalLink className="w-3.5 h-3.5 text-zen-matcha opacity-0 group-hover/item:opacity-100 shrink-0 mt-1 transition-all" />
                 </div>
                 <div className="flex items-center justify-between text-[10px] font-bold tracking-wider uppercase opacity-40">
-                  <span className="bg-black/5 px-2 py-0.5 rounded-md truncate max-w-[120px]">{item.source}</span>
+                  <span className="bg-black/5 px-2 py-0.5 rounded-md truncate max-w-[150px]">{item.source}</span>
                   <span>{item.date}</span>
                 </div>
               </div>
-            </div>
+            </a>
           ))
-        ) : (
-          <div className="h-full flex flex-col items-center justify-center opacity-30 text-xs italic gap-4">
-             <p>找不到新聞文章，請試試別的關鍵字。</p>
-          </div>
         )}
       </div>
     </div>
