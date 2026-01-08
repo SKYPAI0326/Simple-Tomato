@@ -35,7 +35,7 @@ const NewsBoard: React.FC = () => {
     
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      // 優化 Prompt，要求更嚴格的格式化列表
+      // 嚴格定義輸出格式，確保 LLM 生成精確的標題與來源
       const prompt = `Find 6 most recent and relevant news about: "${query}". 
       Write a concise list where each line follows this exact format:
       [TITLE] | [SOURCE] | [URL]
@@ -56,13 +56,12 @@ const NewsBoard: React.FC = () => {
       const responseText = result.text || "";
       const liveNews: NewsItem[] = [];
 
-      // 1. 解析 LLM 輸出的文字 (這部分的標題最準確)
+      // 解析 AI 生成的文字列表
       const lines = responseText.split('\n').filter(line => line.includes('|'));
       lines.forEach((line, index) => {
         const parts = line.split('|').map(p => p.trim());
         if (parts.length >= 3) {
           const [title, source, url] = parts;
-          // 清除標題開頭的序號 (如 "1. ")
           const cleanTitle = title.replace(/^[\d.\-\s*]+/, '').replace(/[*#]/g, '').trim();
           if (url.startsWith('http')) {
             liveNews.push({
@@ -76,7 +75,7 @@ const NewsBoard: React.FC = () => {
         }
       });
 
-      // 2. 解析元數據 (作為備用或補充)
+      // 解析元數據作為補充
       const chunks = result.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
       const groundItems = chunks
         .filter(chunk => chunk.web && chunk.web.uri)
@@ -84,10 +83,8 @@ const NewsBoard: React.FC = () => {
           const uri = chunk.web.uri;
           let hostname = "News";
           try { hostname = new URL(uri).hostname.replace('www.', ''); } catch(e) {}
-          
           return {
             id: index + 100,
-            // 如果元數據的標題太短或看起來像網址，標記為低優先權
             title: chunk.web.title || hostname,
             source: hostname,
             url: uri,
@@ -95,28 +92,25 @@ const NewsBoard: React.FC = () => {
           };
         });
 
-      // 重要：優先保留 liveNews (AI 產生的精確標題)
+      // 優先採用 AI 生成的標題 (去重邏輯)
       const combined = [...liveNews, ...groundItems];
       const uniqueNews = combined.filter((v, i, a) => 
-        // 根據 URL 去重，保留第一個出現的 (即 liveNews 優先)
         a.findIndex(t => t.url === v.url) === i
-      );
+      ).filter(n => n.title.length > 5);
 
-      // 過濾掉標題過短或無意義的結果
-      const filteredNews = uniqueNews.filter(n => n.title.length > 4);
-
-      if (filteredNews.length === 0) {
-        setErrorMessage("暫無相關新聞內容。");
+      if (uniqueNews.length === 0) {
+        setErrorMessage("暫無相關內容");
       } else {
-        setNews(filteredNews.slice(0, 6));
+        setNews(uniqueNews.slice(0, 6));
       }
 
     } catch (error: any) {
       console.error("News Fetch Error:", error);
-      if (error.message?.includes("API key")) {
+      // 處理特定 API Key 錯誤
+      if (error.message?.includes("Requested entity was not found") || error.message?.includes("API key")) {
         setIsKeyMissing(true);
       } else {
-        setErrorMessage("無法獲取新聞標題");
+        setErrorMessage("無法更新最新資訊");
       }
     } finally {
       setIsLoading(false);
@@ -136,8 +130,6 @@ const NewsBoard: React.FC = () => {
 
   return (
     <div className="h-full flex flex-col bg-white/40 backdrop-blur-xl rounded-lg border border-white/60 shadow-sm overflow-hidden group hover:bg-white/50 transition-all duration-500 relative">
-      
-      {/* Header */}
       <div className="p-6 pb-4 border-b border-zen-text/5">
         <div className="flex justify-between items-center mb-4">
           <div className="flex items-center gap-3">
@@ -173,12 +165,11 @@ const NewsBoard: React.FC = () => {
         </form>
       </div>
 
-      {/* List Container */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
         {isLoading ? (
           <div className="h-full flex flex-col items-center justify-center gap-3 text-zen-text/30">
             <Loader2 className="w-8 h-8 animate-spin text-zen-matcha" />
-            <span className="text-[10px] font-bold tracking-widest uppercase animate-pulse">Analyzing...</span>
+            <span className="text-[10px] font-bold tracking-widest uppercase animate-pulse">Syncing...</span>
           </div>
         ) : news.length > 0 ? (
           news.map((item) => (
@@ -205,15 +196,14 @@ const NewsBoard: React.FC = () => {
           ))
         ) : !isKeyMissing && (
            <div className="h-full flex flex-col items-center justify-center opacity-20 text-[10px] font-bold tracking-widest uppercase py-10">
-            No News Content
+            {errorMessage || "No Content"}
           </div>
         )}
 
-        {/* Minimal Connect Overlay when Key is missing */}
         {isKeyMissing && (
-          <div className="absolute inset-0 bg-white/60 backdrop-blur-md flex flex-col items-center justify-center p-8 text-center transition-all duration-500 z-10">
+          <div className="absolute inset-0 bg-white/60 backdrop-blur-md flex flex-col items-center justify-center p-8 text-center z-10">
             <Unplug className="w-6 h-6 text-zen-matcha/40 mb-3" />
-            <p className="text-[10px] font-bold tracking-[0.2em] text-zen-text/40 uppercase mb-4">Offline Mode</p>
+            <p className="text-[10px] font-bold tracking-[0.2em] text-zen-text/40 uppercase mb-4">API Offline</p>
             <button 
               onClick={handleConnectAPI}
               className="px-6 py-2.5 bg-zen-matcha text-white rounded-full text-[10px] font-bold tracking-widest uppercase shadow-md hover:scale-105 active:scale-95 transition-all flex items-center gap-2"
