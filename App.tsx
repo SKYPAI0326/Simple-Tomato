@@ -1,19 +1,41 @@
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import Header from './components/Header.tsx';
 import Timer from './components/Timer.tsx';
 import MemoBoard from './components/MemoBoard.tsx';
 import NewsBoard from './components/NewsBoard.tsx';
 import PhilosophyTile from './components/PhilosophyTile.tsx';
-import { Settings } from 'lucide-react';
+import { Settings, ShieldAlert } from 'lucide-react';
 
 const App: React.FC = () => {
-  const handleOpenSettings = async () => {
+  
+  // 檢查金鑰狀態的輔助函式
+  const checkKeyStatus = async () => {
     try {
-      if ((window as any).aistudio) {
+      if (typeof (window as any).aistudio !== 'undefined') {
+        const hasKey = await (window as any).aistudio.hasSelectedApiKey();
+        console.log("API Key Status:", hasKey ? "Selected" : "Not Selected");
+      }
+    } catch (e) {
+      console.warn("AI Studio environment not detected.");
+    }
+  };
+
+  useEffect(() => {
+    checkKeyStatus();
+  }, []);
+
+  const handleOpenSettings = async () => {
+    console.log("System Config clicked");
+    try {
+      // 確保 window.aistudio 存在，否則提示用戶
+      if (typeof (window as any).aistudio !== 'undefined') {
         await (window as any).aistudio.openSelectKey();
-        // 選擇金鑰後重新整理以套用新環境變數
-        window.location.reload();
+        // 根據規範，觸發後直接視為成功，不建議強制 reload
+        console.log("Key selection dialog opened.");
+      } else {
+        alert("請在 AI Studio 或支援的開發環境中運行以設定 API Key。");
+        console.error("window.aistudio is not defined in this environment.");
       }
     } catch (error) {
       console.error("Failed to open key selector:", error);
@@ -62,7 +84,7 @@ const App: React.FC = () => {
           <div className="flex items-center gap-6">
              <button 
               onClick={handleOpenSettings}
-              className="group flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest opacity-20 hover:opacity-100 transition-all duration-500"
+              className="group flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest opacity-40 hover:opacity-100 transition-all duration-500 bg-white/40 px-3 py-1.5 rounded-full border border-white/60"
              >
                <Settings className="w-3.5 h-3.5 group-hover:rotate-90 transition-transform duration-700" />
                <span>System Config</span>
